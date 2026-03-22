@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>診断結果 | 任天堂ソフト診断</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { padding: 32px 20px; }
+    .header { text-align: center; margin-bottom: 36px; }
+    .header .icon { font-size: 48px; margin-bottom: 12px; }
+    .header h1 { font-size: 20px; font-weight: 900; color: #1a1a1a; line-height: 1.5; }
+    .header p { font-size: 13px; color: #aaa; margin-top: 6px; }
+
+    .games { display: flex; flex-direction: column; gap: 16px; margin-bottom: 36px; }
+    .game-card {
+      display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 22px;
+      border-radius: 18px; background: #fff8f8; border: 2px solid #ffd0d0;
+      animation: fadeUp 0.4s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .game-title { font-size: 17px; font-weight: 800; color: #1a1a1a; line-height: 1.5; }
+    .similar-card {
+      padding: 16px 22px; border-radius: 18px;
+      background: #fafafa; border: 2px solid #f0f0f0;
+      animation: fadeUp 0.4s 0.1s ease both;
+    }
+    .game-link { display: inline-block; font-size: 11px; font-weight: 700; color: #1a6fd4; text-decoration: none; align-self: center; }
+    .game-link:hover { text-decoration: underline; }
+    .similar-label { font-size: 11px; font-weight: 800; color: #aaa; letter-spacing: 1px; margin-bottom: 10px; }
+    .similar-list { display: flex; flex-direction: column; gap: 10px; }
+    .similar-item { font-size: 13px; color: #444; padding-left: 10px; border-left: 2px solid #ddd; }
+    .similar-link { display: inline-block; font-size: 11px; font-weight: 700; color: #1a6fd4; margin-top: 4px; text-decoration: none; }
+    .similar-link:hover { text-decoration: underline; }
+
+    .no-result { text-align: center; color: #aaa; padding: 32px; }
+    .actions { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+    .debug-total { font-size: 11px; color: #bbb; text-align: center; margin-bottom: 16px; }
+
+    .answers-wrap {
+      margin-bottom: 28px;
+      border-top: 2px solid #f0f0f0;
+      padding-top: 20px;
+    }
+    .answers-title {
+      font-size: 11px; font-weight: 800; color: #ccc; letter-spacing: 2px;
+      text-transform: uppercase; margin-bottom: 12px;
+    }
+    .answer-item {
+      background: #fafafa; border: 1.5px solid #eee; border-radius: 12px;
+      padding: 12px 16px; margin-bottom: 8px;
+    }
+    .answer-item:last-child { margin-bottom: 0; }
+    .answer-q { font-size: 12px; color: #999; font-weight: 700; margin-bottom: 4px; }
+    .answer-q-text { font-size: 13px; color: #444; font-weight: 700; margin-bottom: 6px; }
+    .answer-label {
+      display: inline-block; font-size: 12px; font-weight: 800;
+      background: #e60012; color: #fff; border-radius: 100px;
+      padding: 2px 10px;
+    }
+
+    @media (max-width: 480px) {
+      .header h1 { font-size: 18px; }
+      .game-title { font-size: 14px; }
+      .game-card { padding: 16px 18px; gap: 14px; }
+      .actions .btn { width: 100%; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="header">
+      <div class="icon">🎮</div>
+      <h1>あなたへのおすすめソフト</h1>
+      <p>診断結果</p>
+    </div>
+    <div id="content"></div>
+    <div class="answers-wrap" id="answers-wrap" style="display:none">
+      <div class="answers-title">あなたの回答</div>
+      <div id="answers-list"></div>
+    </div>
+    <div class="actions">
+      <a href="/quiz" class="btn" id="restart">もう一度診断する</a>
+      <a href="/quiz" class="link-back" id="back-to-quiz">← 前の質問に戻る</a>
+      <a href="/" class="link-back" id="back-to-top">← トップへ戻る</a>
+    </div>
+  </div>
+
+  <script>
+    const stored = sessionStorage.getItem('result');
+    const total  = sessionStorage.getItem('result_total');
+    const content = document.getElementById('content');
+
+    if (!stored) {
+      location.href = '/quiz';
+    } else {
+      const games = JSON.parse(stored);
+
+      if (total !== null) {
+        const debug = document.createElement('div');
+        debug.className = 'debug-total';
+        debug.textContent = `[DEBUG] 該当件数: ${total} 件`;
+        content.before(debug);
+      }
+
+      if (games.length === 0) {
+        content.innerHTML = '<div class="no-result"><p>ゲームが見つかりませんでした。</p></div>';
+      } else {
+        content.innerHTML = '<div class="games">' +
+          games.map(g => {
+            const gameLink = g.official_url
+              ? `<a href="${g.official_url}" target="_blank" rel="noopener" class="game-link">このゲームの情報はこちらから！</a>`
+              : '';
+            const similar = g.similar_items && g.similar_items.length > 0
+              ? `<div class="similar-card">
+                   <div class="similar-label">シリーズ作品</div>
+                   <div class="similar-list">${g.similar_items.map(s => {
+                     const sLink = s.official_url
+                       ? `<a href="${s.official_url}" target="_blank" rel="noopener" class="similar-link">ゲームの詳細を見る</a>`
+                       : '';
+                     return `<div class="similar-item">${s.title}${sLink ? '<br>' + sLink : ''}</div>`;
+                   }).join('')}</div>
+                 </div>`
+              : '';
+            return `<div class="game-card">
+              <div class="game-title">${g.title}</div>
+              ${gameLink}
+            </div>
+            ${similar}`;
+          }).join('') +
+          '</div>';
+      }
+      sessionStorage.removeItem('result');
+      sessionStorage.removeItem('result_total');
+
+      // 回答履歴を表示
+      const quizState = sessionStorage.getItem('quiz_state');
+      if (quizState) {
+        const { history } = JSON.parse(quizState);
+        if (history && history.length > 0) {
+          document.getElementById('answers-wrap').style.display = 'block';
+          document.getElementById('answers-list').innerHTML = history.map((item, i) => {
+            const label = item.answer === 0 ? item.question.choiceA : item.question.choiceB;
+            return `
+              <div class="answer-item">
+                <div class="answer-q">Q. ${i + 1}</div>
+                <div class="answer-q-text">${item.question.text}</div>
+                <span class="answer-label">${label}</span>
+              </div>`;
+          }).join('');
+        }
+      }
+
+      // 「前の質問に戻る」: quiz_state は quiz.html 側が保存済みのためそのまま遷移
+      document.getElementById('back-to-quiz').addEventListener('click', e => {
+        e.preventDefault();
+        location.href = '/quiz';
+      });
+
+      // 「もう一度診断する」「トップへ戻る」: quiz_state を削除してリセット
+      ['restart', 'back-to-top'].forEach(id => {
+        document.getElementById(id).addEventListener('click', () => {
+          sessionStorage.removeItem('quiz_state');
+        });
+      });
+    }
+  </script>
+</body>
+</html>

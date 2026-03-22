@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>診断 | 任天堂ソフト診断</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .progress-header { display: flex; align-items: center; gap: 14px; margin-bottom: 36px; }
+    .progress-bar-bg { flex: 1; height: 6px; background: #f0f0f0; border-radius: 3px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: #e60012; border-radius: 3px; transition: width 0.4s ease; }
+    .progress-label { font-size: 12px; font-weight: 700; color: #ccc; white-space: nowrap; }
+    .debug-count { font-size: 11px; color: #bbb; text-align: right; margin-bottom: 8px; }
+
+    .questions-wrap { position: relative; min-height: 280px; }
+    .question { opacity: 0; transform: translateX(40px); transition: opacity 0.3s ease, transform 0.3s ease; }
+    .question.active { opacity: 1; transform: translateX(0); }
+
+    .q-number { font-size: 11px; font-weight: 800; color: #e60012; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; }
+    .q-text { font-size: 24px; font-weight: 900; color: #1a1a1a; line-height: 1.4; margin-bottom: 32px; }
+
+    .choices { display: flex; flex-direction: column; gap: 14px; }
+    .choice-btn {
+      width: 100%; padding: 20px 24px; border: 2.5px solid #eee; border-radius: 16px;
+      background: #fafafa; cursor: pointer; font-size: 15px; font-weight: 700; color: #1a1a1a;
+      text-align: left; transition: border-color 0.15s, background 0.15s, transform 0.1s;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .choice-btn:hover { border-color: #e60012; background: #fff5f5; transform: translateY(-2px); }
+    .choice-btn:active { transform: scale(0.98); }
+    .choice-icon { font-size: 28px; flex-shrink: 0; }
+
+    .back-btn {
+      background: none; border: none; color: #bbb; font-size: 13px; font-weight: 700;
+      cursor: pointer; padding: 8px 0 0; visibility: hidden; width: 100%; text-align: center;
+    }
+    .back-btn:hover { color: #555; }
+
+    .history-wrap {
+      margin-top: 32px;
+      border-top: 2px solid #f0f0f0;
+      padding-top: 20px;
+      display: none;
+    }
+    .history-title {
+      font-size: 11px; font-weight: 800; color: #ccc; letter-spacing: 2px;
+      text-transform: uppercase; margin-bottom: 12px;
+    }
+    .history-item {
+      background: #fafafa; border: 1.5px solid #eee; border-radius: 12px;
+      padding: 12px 16px; margin-bottom: 8px;
+    }
+    .history-item:last-child { margin-bottom: 0; }
+    .history-q { font-size: 12px; color: #999; font-weight: 700; margin-bottom: 4px; }
+    .history-q-text { font-size: 13px; color: #444; font-weight: 700; margin-bottom: 6px; }
+    .history-a {
+      display: inline-block; font-size: 12px; font-weight: 800;
+      background: #e60012; color: #fff; border-radius: 100px;
+      padding: 2px 10px;
+    }
+
+    @media (max-width: 480px) {
+      .q-text { font-size: 20px; }
+      .choice-btn { padding: 16px 18px; font-size: 14px; }
+      .choice-icon { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="debug-count" id="debug-count"></div>
+    <div class="progress-header">
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progress-fill" style="width: 0%"></div>
+      </div>
+      <div class="progress-label" id="progress-label">Q. 1</div>
+    </div>
+    <div class="questions-wrap" id="questions-wrap"></div>
+    <div class="history-wrap" id="history-wrap">
+      <div class="history-title">これまでの回答</div>
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <script>
+    // 回答履歴: [{ question: {...}, answer: 0|1 }, ...]
+    // 現在の質問は末尾（まだ回答されていない状態で表示中）
+    let history = [];   // { question, answer } の配列（回答済み）
+    let currentQ = null; // 現在表示中の質問（未回答）
+    const answers = {}; // { a1: 0, a3: 1, ... }
+    const MAX_Q = 8;
+
+    // リザルト画面から戻った場合の状態復元
+    const savedState = sessionStorage.getItem('quiz_state');
+    if (savedState) {
+      const state = JSON.parse(savedState);
+      history = state.history || [];
+      Object.assign(answers, state.answers || {});
+      sessionStorage.removeItem('quiz_state');
+
+      // 最後の質問を再表示（再回答させる）
+      if (history.length > 0) {
+        const last = history[history.length - 1];
+        delete answers['a' + last.question.number];
+        history.pop();
+        currentQ = last.question;
+        renderQuestion(currentQ, true);
+        renderHistory();
+        updateDebugCount();
+        updateProgress();
+      } else {
+        fetchNextQuestion();
+      }
+    } else {
+      fetchNextQuestion();
+    }
+
+    function fetchNextQuestion() {
+      fetch('/api/next-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(answers)
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.done) {
+            // 状態を保存してリザルトへ
+            sessionStorage.setItem('quiz_state', JSON.stringify({ history, answers: { ...answers } }));
+            sessionStorage.setItem('result', JSON.stringify(data.games));
+            sessionStorage.setItem('result_total', data.total);
+            location.href = '/result';
+          } else {
+            currentQ = data.question;
+            renderQuestion(currentQ);
+            updateDebugCount(data.remaining);
+            updateProgress();
+          }
+        });
+    }
+
+    function renderQuestion(q, instant) {
+      const wrap = document.getElementById('questions-wrap');
+      const div = document.createElement('div');
+      div.className = 'question';
+      div.innerHTML = `
+        <div class="q-number">Q. ${history.length + 1}</div>
+        <div class="q-text">${q.text}</div>
+        <div class="choices">
+          <button class="choice-btn" onclick="answer(0)">
+            <span class="choice-icon">🅰️</span><span>${q.choiceA}</span>
+          </button>
+          <button class="choice-btn" onclick="answer(1)">
+            <span class="choice-icon">🅱️</span><span>${q.choiceB}</span>
+          </button>
+        </div>
+        <button class="back-btn" id="back-btn"
+          style="visibility:${history.length > 0 ? 'visible' : 'hidden'}"
+          onclick="goBack()">← 前の質問に戻る</button>
+      `;
+      wrap.innerHTML = '';
+      wrap.appendChild(div);
+
+      if (instant) {
+        div.classList.add('active');
+      } else {
+        requestAnimationFrame(() => requestAnimationFrame(() => div.classList.add('active')));
+      }
+    }
+
+    function answer(value) {
+      // ボタン連打防止
+      document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+
+      answers['a' + currentQ.number] = value;
+      history.push({ question: currentQ, answer: value });
+
+      // アニメーション退場
+      const el = document.querySelector('.question');
+      if (el) {
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(-40px)';
+        el.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      }
+
+      renderHistory();
+      setTimeout(() => fetchNextQuestion(), 300);
+    }
+
+    function goBack() {
+      if (history.length === 0) return;
+
+      // 最後の回答を取り消す
+      const prev = history.pop();
+      delete answers['a' + prev.question.number];
+
+      // アニメーション退場（右方向）
+      const el = document.querySelector('.question');
+      if (el) {
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(40px)';
+        el.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      }
+
+      setTimeout(() => {
+        currentQ = prev.question;
+        renderQuestion(currentQ);
+        renderHistory();
+        updateDebugCount();
+        updateProgress();
+      }, 300);
+    }
+
+    function updateDebugCount(count) {
+      if (count !== undefined) {
+        document.getElementById('debug-count').textContent = `[DEBUG] 該当件数: ${count} 件`;
+      } else {
+        fetch('/api/count', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(answers)
+        })
+          .then(r => r.json())
+          .then(data => {
+            document.getElementById('debug-count').textContent = `[DEBUG] 該当件数: ${data.count} 件`;
+          });
+      }
+    }
+
+    function renderHistory() {
+      const wrap = document.getElementById('history-wrap');
+      const list = document.getElementById('history-list');
+      if (history.length === 0) {
+        wrap.style.display = 'none';
+        return;
+      }
+      wrap.style.display = 'block';
+      list.innerHTML = history.map((item, i) => {
+        const label = item.answer === 0 ? item.question.choiceA : item.question.choiceB;
+        return `
+          <div class="history-item">
+            <div class="history-q">Q. ${i + 1}</div>
+            <div class="history-q-text">${item.question.text}</div>
+            <span class="history-a">${label}</span>
+          </div>`;
+      }).join('');
+    }
+
+    function updateProgress() {
+      const answered = history.length;
+      const pct = (answered / MAX_Q) * 100;
+      document.getElementById('progress-fill').style.width = pct + '%';
+      document.getElementById('progress-label').textContent = 'Q. ' + (answered + 1);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    networks:
+      - app_net
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    expose:
+      - "8080"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+    networks:
+      - app_net
+      - db_net
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    build:
+      context: ./db
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${DB_NAME}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - db_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+networks:
+  app_net:
+  db_net:
+    internal: true
+
+volumes:
+  db_data:
