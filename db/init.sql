@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS games (
 INSERT INTO games (id, title, is_retro, is_party, is_action, is_long_play, is_hard, is_strategic, is_story_driven, is_educational, is_sports, is_collectible, has_similar, official_url) VALUES
 
 -- ============================================================
--- Nintendo Switch / Switch 2（任天堂発売タイトル）
+-- Nintendo Switch / Switch 2
 -- ============================================================
 
 -- マリオシリーズ

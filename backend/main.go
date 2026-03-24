@@ -41,6 +41,10 @@ func main() {
 	}
 	defer db.Close()
 
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
 	http.HandleFunc("/api/questions", questionsHandler)
 	http.HandleFunc("/api/count", countHandler)
 	http.HandleFunc("/api/next-question", nextQuestionHandler) // 決定木
